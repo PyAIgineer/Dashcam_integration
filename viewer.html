@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinel — Dashcam Live</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14181d; --panel2:#1a1f26; --line:#232830;
+    --fg:#e7eaee; --muted:#8b949e; --dim:#6b7480;
+    --ok:#3fb950; --warn:#d29922; --bad:#f85149; --info:#58a6ff;
+    color-scheme: dark;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;}
+  code,.mono{font-family:ui-monospace,"Cascadia Code",Consolas,monospace}
+
+  header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+         padding:12px 18px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .brand{font-weight:650;font-size:15px;letter-spacing:.2px}
+  .brand small{color:var(--dim);font-weight:400;margin-left:8px;letter-spacing:0}
+  .pills{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+  .pill{display:flex;align-items:center;gap:6px;padding:4px 11px;border-radius:99px;
+        background:var(--panel2);border:1px solid var(--line);font-size:12px;color:var(--muted)}
+  .dot{width:7px;height:7px;border-radius:99px;background:var(--dim);flex:none}
+  .dot.ok{background:var(--ok);box-shadow:0 0 7px var(--ok)}
+  .dot.warn{background:var(--warn);box-shadow:0 0 7px var(--warn)}
+  .dot.bad{background:var(--bad)}
+  .dot.live{animation:pulse 1.8s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.35}}
+
+  .wrap{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;padding:14px;align-items:start}
+  @media (max-width:1080px){.wrap{grid-template-columns:1fr}}
+
+  .cams{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .card>h2{margin:0;padding:9px 13px;font-size:12.5px;font-weight:600;letter-spacing:.3px;
+           border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .card>h2 .st{margin-left:auto;font-weight:400;font-size:11.5px;color:var(--muted)}
+  video{width:100%;aspect-ratio:16/9;background:#000;display:block}
+
+  .side{display:flex;flex-direction:column;gap:14px}
+  .kv{padding:4px 0;display:flex;justify-content:space-between;gap:10px;align-items:baseline;
+      border-bottom:1px solid #1c2128}
+  .kv:last-child{border-bottom:0}
+  .kv .k{color:var(--muted);font-size:12px}
+  .kv .v{font-size:13px;text-align:right}
+  .body{padding:10px 13px}
+
+  .speed{display:flex;align-items:baseline;gap:8px;padding:6px 0 12px}
+  .speed b{font-size:38px;font-weight:600;letter-spacing:-1px;font-variant-numeric:tabular-nums}
+  .speed span{color:var(--muted);font-size:12px}
+
+  .sats{display:flex;gap:3px;margin-top:3px}
+  .sats i{width:8px;height:14px;border-radius:2px;background:#242a33}
+  .sats i.on{background:var(--ok)}
+  .sats i.weak{background:var(--warn)}
+
+  .fixbox{padding:9px 11px;border-radius:8px;background:var(--panel2);
+          border:1px solid var(--line);margin-bottom:10px}
+  .fixbox.good{border-color:#1f4d2b;background:#0f1f14}
+  .fixbox.bad{border-color:#4d2222;background:#1f1113}
+  .fixbox .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+  .fixbox .val{font-size:16px;font-weight:600;margin-top:1px}
+
+  a.map{color:var(--info);text-decoration:none;font-size:12px}
+  a.map:hover{text-decoration:underline}
+
+  #alarms{max-height:330px;overflow-y:auto}
+  .alarm{padding:8px 13px;border-bottom:1px solid #1c2128;display:flex;gap:9px;align-items:flex-start}
+  .alarm:last-child{border-bottom:0}
+  .tag{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;flex:none;margin-top:1px}
+  .tag.ADAS{background:#1c3a5e;color:#9ecbff}
+  .tag.DMS{background:#4a2c14;color:#ffc98a}
+  .alarm .t{font-size:12.5px}
+  .alarm .m{font-size:11px;color:var(--dim)}
+  .empty{padding:16px 13px;color:var(--dim);font-size:12.5px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">Sentinel · Dashcam <small id="devid">871080028908</small></div>
+  <div class="pills">
+    <div class="pill"><span class="dot" id="d-link"></span><span id="t-link">telemetry…</span></div>
+    <div class="pill"><span class="dot" id="d-dev"></span><span id="t-dev">device…</span></div>
+    <div class="pill"><span id="t-seen">no data</span></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="cams" id="cams"></div>
+
+  <div class="side">
+    <div class="card">
+      <h2>Position</h2>
+      <div class="body">
+        <div class="fixbox" id="fixbox">
+          <div class="lbl">GPS status</div>
+          <div class="val" id="fixval">waiting…</div>
+          <div class="sats" id="satbar"></div>
+        </div>
+        <div class="speed"><b id="speed">--</b><span>km/h</span></div>
+        <div class="kv"><span class="k">Latitude</span><span class="v mono" id="lat">--</span></div>
+        <div class="kv"><span class="k">Longitude</span><span class="v mono" id="lon">--</span></div>
+        <div class="kv"><span class="k">Heading</span><span class="v" id="head">--</span></div>
+        <div class="kv"><span class="k">Altitude</span><span class="v" id="alt">--</span></div>
+        <div class="kv"><span class="k">Odometer</span><span class="v" id="mile">--</span></div>
+        <div class="kv"><span class="k">Map</span><span class="v"><a class="map" id="maplink" target="_blank" rel="noopener">open in maps</a></span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Device</h2>
+      <div class="body">
+        <div class="kv"><span class="k">Ignition (ACC)</span><span class="v" id="acc">--</span></div>
+        <div class="kv"><span class="k">4G signal</span><span class="v" id="rssi">--</span></div>
+        <div class="kv"><span class="k">Satellites</span><span class="v" id="sats">--</span></div>
+        <div class="kv"><span class="k">Device clock</span><span class="v mono" id="clock">--</span></div>
+        <div class="kv"><span class="k">Alarm flags</span><span class="v mono" id="flags">--</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>ADAS / DMS alarms <span class="st" id="alarmcount">0</span></h2>
+      <div id="alarms"><div class="empty">No alarms received.</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DEVICE   = "871080028908";
+const HLS_BASE = "http://localhost:8888";
+const SSE_URL  = "http://localhost:8099/events";
+const CHANNELS = [{ch:1,label:"Channel 1 · Road (ADAS)"},{ch:2,label:"Channel 2 · Cabin (DMS)"}];
+
+const $ = id => document.getElementById(id);
+const setDot = (el, cls) => { el.className = "dot" + (cls ? " " + cls : ""); };
+
+/* ---------- video ---------- */
+for (const {ch, label} of CHANNELS) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `<h2><span class="dot" id="vd${ch}"></span>${label}<span class="st" id="vs${ch}">connecting…</span></h2>
+                    <video id="v${ch}" muted autoplay playsinline controls></video>`;
+  $("cams").appendChild(card);
+
+  const video = card.querySelector("video");
+  const url = `${HLS_BASE}/${DEVICE}_ch${ch}/index.m3u8`;
+  const stat = (txt, cls) => { $("vs"+ch).textContent = txt; setDot($("vd"+ch), cls); };
+
+  if (Hls.isSupported()) {
+    // tiny live buffer keeps us near the edge of the LL-HLS playlist
+    const hls = new Hls({lowLatencyMode:true, liveSyncDurationCount:1, backBufferLength:10});
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(()=>{}));
+    hls.on(Hls.Events.FRAG_BUFFERED, () => stat("live", "ok live"));
+    hls.on(Hls.Events.ERROR, (_, d) => {
+      if (!d.fatal) return;
+      stat(d.details === "manifestLoadError" ? "no publisher" : (d.details || "error"), "bad");
+      // the MediaMTX path only exists while ffmpeg is publishing, so keep retrying
+      setTimeout(() => { hls.loadSource(url); hls.startLoad(); }, 3000);
+    });
+  } else {
+    video.src = url;
+    video.addEventListener("playing", () => stat("live", "ok live"));
+    video.addEventListener("error",   () => stat("error", "bad"));
+  }
+}
+
+/* ---------- telemetry ---------- */
+let lastSeen = 0, alarmCount = 0;
+
+function compass(deg){
+  const pts = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+  return pts[Math.round(deg/22.5) % 16];
+}
+
+function renderSats(n){
+  const bar = $("satbar");
+  bar.innerHTML = "";
+  for (let i = 0; i < 12; i++){
+    const el = document.createElement("i");
+    if (i < n) el.className = n >= 6 ? "on" : "weak";
+    bar.appendChild(el);
+  }
+}
+
+function applyLoc(d){
+  lastSeen = Date.now();
+  const sats = d.sats ?? 0;
+
+  const box = $("fixbox");
+  if (d.fixed) {
+    box.className = "fixbox " + (sats >= 6 ? "good" : "");
+    $("fixval").textContent = sats >= 6 ? "Fixed · strong" : "Fixed · marginal";
+  } else {
+    box.className = "fixbox bad";
+    $("fixval").textContent = sats > 0 ? `No fix · tracking ${sats}` : "No fix · no satellites";
+  }
+  renderSats(sats);
+
+  $("speed").textContent = (d.speed_kmh ?? 0).toFixed(1);
+  $("lat").textContent   = d.lat?.toFixed(6) ?? "--";
+  $("lon").textContent   = d.lon?.toFixed(6) ?? "--";
+  $("head").textContent  = d.heading != null ? `${d.heading}° ${compass(d.heading)}` : "--";
+  $("alt").textContent   = d.alt_m != null ? `${d.alt_m} m` : "--";
+  $("mile").textContent  = d.mileage_km != null ? `${d.mileage_km.toFixed(1)} km` : "--";
+  $("acc").textContent   = d.acc_on ? "on" : "off";
+  $("rssi").textContent  = d.rssi != null ? `${d.rssi}` : "--";
+  $("sats").textContent  = sats;
+  $("clock").textContent = d.time_gmt8 ?? "--";
+  $("flags").textContent = "0x" + (d.alarm_flags ?? 0).toString(16).padStart(8,"0");
+
+  const link = $("maplink");
+  if (d.lat && d.lon) link.href = `https://www.google.com/maps?q=${d.lat},${d.lon}`;
+
+  setDot($("d-dev"), "ok");
+  $("t-dev").textContent = "device online";
+}
+
+function addAlarm(a){
+  const list = $("alarms");
+  if (alarmCount === 0) list.innerHTML = "";
+  const row = document.createElement("div");
+  row.className = "alarm";
+  row.innerHTML = `<span class="tag ${a.src}">${a.src}</span>
+                   <div><div class="t">${a.type} <span class="m">level ${a.level}</span></div>
+                   <div class="m">${a.ts} · ${a.flag} · ${a.lat?.toFixed(5)}, ${a.lon?.toFixed(5)}</div></div>`;
+  list.prepend(row);
+  $("alarmcount").textContent = ++alarmCount;
+}
+
+function connect(){
+  const es = new EventSource(SSE_URL);
+
+  es.onopen = () => { setDot($("d-link"), "ok"); $("t-link").textContent = "telemetry connected"; };
+  es.addEventListener("snapshot", e => {
+    const s = JSON.parse(e.data);
+    const d = s.devices[DEVICE] || Object.values(s.devices)[0];
+    if (d) applyLoc(d);
+    (s.alarms || []).forEach(addAlarm);
+  });
+  es.addEventListener("loc",     e => applyLoc(JSON.parse(e.data)));
+  es.addEventListener("alarm",   e => addAlarm(JSON.parse(e.data)));
+  es.addEventListener("online",  () => { setDot($("d-dev"), "ok");  $("t-dev").textContent = "device online"; });
+  es.addEventListener("offline", () => { setDot($("d-dev"), "bad"); $("t-dev").textContent = "device offline"; });
+
+  es.onerror = () => {
+    setDot($("d-link"), "bad");
+    $("t-link").textContent = "telemetry lost — is the tunnel up?";
+    es.close();
+    setTimeout(connect, 4000);
+  };
+}
+connect();
+
+// reports arrive every ~10s at rest, so anything past 30s means the feed has stalled
+setInterval(() => {
+  if (!lastSeen) return;
+  const age = Math.round((Date.now() - lastSeen)/1000);
+  $("t-seen").textContent = age < 2 ? "updated just now" : `updated ${age}s ago`;
+  if (age > 30){ setDot($("d-dev"), "warn"); $("t-dev").textContent = "no recent reports"; }
+}, 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# jt_server.py uses only the Python standard library.
+# No pip packages are required. Listed for completeness / future extensions.
+
+# ---- System dependencies (NOT installed via pip) ----
+# ffmpeg      -> apt install ffmpeg   (must be on PATH)
+# MediaMTX    -> https://github.com/bluenviron/mediamtx (run as a separate service)
