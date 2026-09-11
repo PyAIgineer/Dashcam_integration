@@ -45,10 +45,11 @@ Device ID `871080028908` (last 12 digits of IMEI), auth code `SENTINEL01`.
 ## Viewing
 
 ```powershell
-.\start-viewer.ps1
+.\start-viewer.cmd
 ```
 
-Tunnels 8888 + 8099, opens the dashboard, holds until Ctrl+C.
+Tunnels 8888 + 8099, opens the dashboard, holds until Ctrl+C. The `.cmd` wrapper bypasses
+execution policy for this script alone; `.\start-viewer.ps1` works directly if your policy allows it.
 
 For OpenCV:
 
